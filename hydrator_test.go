@@ -41,7 +41,7 @@ func (c *C) GetD(x interface{}) (interface{}, error) {
 }
 
 func (c *C) GetDD(x interface{}) (interface{}, error) {
-	return []*D{&D{ID: 5}}, nil
+	return []*D{{ID: 5}}, nil
 }
 
 // D is an example struct
@@ -154,7 +154,7 @@ type RecursiveSliceErr struct {
 
 // GetR is a method to get R
 func (e *RecursiveSliceErr) GetR(x interface{}) (interface{}, error) {
-	return []*RecursiveErrMethod{&RecursiveErrMethod{ID: 3}}, nil
+	return []*RecursiveErrMethod{{ID: 3}}, nil
 }
 
 func Test_Hydrator_Finder(t *testing.T) {
