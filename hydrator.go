@@ -125,7 +125,7 @@ func (h *Hydrator) Hydrate(obj interface{}) error {
 				flowChan <- struct{}{}
 				vals := objVal.MethodByName(hydrateTag).Call(
 					[]reflect.Value{
-						reflect.ValueOf(struct{}{}),
+						objVal,
 					},
 				)
 
