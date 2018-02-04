@@ -19,7 +19,7 @@ type A struct {
 }
 
 // GetC is a method to get C
-func (a *A) GetC(x interface{}) (interface{}, error) {
+func (a *A) GetC(ctx context.Context, x interface{}) (interface{}, error) {
 	return &C{ID: 3}, nil
 }
 
@@ -35,7 +35,7 @@ type C struct {
 }
 
 // GetD is a method on C that gets called for hydrating D
-func (c *C) GetD(x interface{}) (interface{}, error) {
+func (c *C) GetD(ctx context.Context, x interface{}) (interface{}, error) {
 	return &D{ID: 4}, nil
 }
 
@@ -48,7 +48,7 @@ hydrator := hydrator.NewHydrator()
 
 hydrator.Finder(
 	B{},
-	func(obj interface{}) (interface{}, error) {
+	func(ctx context.Context, obj interface{}) (interface{}, error) {
 		return &B{ID: 2}, nil
 	},
 )
