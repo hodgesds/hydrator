@@ -1,6 +1,7 @@
 package hydrator
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -10,7 +11,7 @@ import (
 var ErrInvalidObject = fmt.Errorf("Invalid object")
 
 // Finder is used to find an instance.
-type Finder func(interface{}) (interface{}, error)
+type Finder func(context.Context, interface{}) (interface{}, error)
 
 // Opt is an option for configuring a Hydrator.
 type Opt func(*Hydrator)
@@ -73,7 +74,7 @@ type hydrationResult struct {
 }
 
 // Hydrate takes on object and attempts to dynamically hydrate it.
-func (h *Hydrator) Hydrate(obj interface{}) error {
+func (h *Hydrator) Hydrate(ctx context.Context, obj interface{}) error {
 	var err error
 
 	objVal := reflect.ValueOf(obj)
@@ -116,32 +117,47 @@ func (h *Hydrator) Hydrate(obj interface{}) error {
 			break
 		}
 
-		// if there is a method on the struct try calling it
+		// if there is a Finder method on the struct try calling it
 		_, ok := objType.MethodByName(hydrateTag)
 		if ok {
-			wg.Add(1)
-			go func(flowChan chan struct{}) {
-				defer wg.Done()
-				flowChan <- struct{}{}
-				vals := objVal.MethodByName(hydrateTag).Call(
-					[]reflect.Value{
-						objVal,
-					},
-				)
+			var f Finder
+			finderType := reflect.TypeOf(f)
+			method := objVal.MethodByName(hydrateTag)
+			indMethod := indObjVal.MethodByName(hydrateTag)
 
-				var err error
-				if vals[1].Interface() != nil {
-					err = vals[1].Interface().(error)
-				}
+			// see https://groups.google.com/forum/#!topic/golang-nuts/wnH302gBa4I
+			validMethod := false
 
-				resChan <- hydrationResult{
-					err:   err,
-					val:   vals[0].Interface(),
-					field: structField.Name,
-				}
-				<-flowChan
-			}(h.flowChan)
-			continue
+			if method.IsValid() && !method.IsNil() && method.Type().ConvertibleTo(finderType) {
+				f = method.Convert(finderType).Interface().(Finder)
+				validMethod = true
+			}
+
+			if indMethod.IsValid() && !indMethod.IsNil() && indMethod.Type().ConvertibleTo(finderType) {
+				f, ok = indMethod.Convert(finderType).Interface().(Finder)
+				validMethod = true
+			}
+
+			if validMethod {
+				wg.Add(1)
+				go func(flowChan chan struct{}, field string, finder Finder) {
+					defer wg.Done()
+					flowChan <- struct{}{}
+
+					val, err := finder(ctx, objVal)
+
+					resChan <- hydrationResult{
+						err:   err,
+						val:   val,
+						field: field,
+					}
+					<-flowChan
+				}(h.flowChan, structField.Name, f)
+				continue
+			}
+
+			err = fmt.Errorf("Method is not a finder")
+			break
 		}
 
 		h.RLock()
@@ -154,17 +170,17 @@ func (h *Hydrator) Hydrate(obj interface{}) error {
 		}
 
 		wg.Add(1)
-		go func(flowChan chan struct{}, finder Finder) {
+		go func(ctx context.Context, flowChan chan struct{}, finder Finder) {
 			defer wg.Done()
 			flowChan <- struct{}{}
-			val, err := finder(indObjVal.FieldByName(hydrateTag).Interface())
+			val, err := finder(ctx, indObjVal.FieldByName(hydrateTag).Interface())
 			resChan <- hydrationResult{
 				err:   err,
 				val:   val,
 				field: structField.Name,
 			}
 			<-flowChan
-		}(h.flowChan, finder)
+		}(ctx, h.flowChan, finder)
 	}
 
 	go func() {
@@ -192,7 +208,7 @@ func (h *Hydrator) Hydrate(obj interface{}) error {
 
 		// recursive hydration if it is a struct
 		if resType.Kind() == reflect.Ptr && resVal.Elem().Type().Kind() == reflect.Struct {
-			if er := h.Hydrate(res.val); er != nil {
+			if er := h.Hydrate(ctx, res.val); er != nil {
 				err = er
 				continue
 			}
@@ -210,18 +226,18 @@ func (h *Hydrator) Hydrate(obj interface{}) error {
 
 			for i := 0; i < resVal.Len(); i++ {
 				swg.Add(1)
-				go func(flowChan chan struct{}, i int) {
+				go func(ctx context.Context, flowChan chan struct{}, i int) {
 					defer swg.Done()
 					flowChan <- struct{}{}
 
-					err := h.Hydrate(resVal.Index(i).Interface())
+					err := h.Hydrate(ctx, resVal.Index(i).Interface())
 
 					sliceResChan <- hydrationResult{
 						err: err,
 					}
 					<-flowChan
 
-				}(h.flowChan, i)
+				}(ctx, h.flowChan, i)
 			}
 			go func() {
 				swg.Wait()

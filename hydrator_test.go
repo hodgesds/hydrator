@@ -1,6 +1,7 @@
 package hydrator
 
 import (
+	"context"
 	"fmt"
 	"testing"
 )
@@ -15,12 +16,12 @@ type A struct {
 }
 
 // GetC is a method to get C
-func (a *A) GetC(x interface{}) (interface{}, error) {
+func (a *A) GetC(ctx context.Context, x interface{}) (interface{}, error) {
 	return &C{ID: 3}, nil
 }
 
 // GetNP is a non pointer receiver method to get C
-func (a A) GetNP(x interface{}) (interface{}, error) {
+func (a A) GetNP(ctx context.Context, x interface{}) (interface{}, error) {
 	return &C{ID: 3}, nil
 }
 
@@ -36,11 +37,11 @@ type C struct {
 	DD []*D `hydrate:"GetDD"`
 }
 
-func (c *C) GetD(x interface{}) (interface{}, error) {
+func (c *C) GetD(ctx context.Context, x interface{}) (interface{}, error) {
 	return &D{ID: 4}, nil
 }
 
-func (c *C) GetDD(x interface{}) (interface{}, error) {
+func (c *C) GetDD(ctx context.Context, x interface{}) (interface{}, error) {
 	return []*D{{ID: 5}}, nil
 }
 
@@ -56,7 +57,10 @@ type Private struct {
 }
 
 // GetC is a method to get C
-func (p *Private) GetC(x interface{}) (interface{}, error) {
+func (p *Private) GetC(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	return &C{ID: 3}, nil
 }
 
@@ -69,13 +73,19 @@ type NonStruct struct {
 }
 
 // GetC is a method to get C
-func (n *NonStruct) GetC(x interface{}) (interface{}, error) {
+func (n *NonStruct) GetC(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	res := 123
 	return &res, nil
 }
 
 // GetD is a method to get D
-func (n *NonStruct) GetD(x interface{}) (interface{}, error) {
+func (n *NonStruct) GetD(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	a := 1
 	b := 2
 
@@ -83,7 +93,10 @@ func (n *NonStruct) GetD(x interface{}) (interface{}, error) {
 }
 
 // GetE is a method to get E
-func (n *NonStruct) GetE(x interface{}) (interface{}, error) {
+func (n *NonStruct) GetE(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	a := 3
 	b := 4
 
@@ -97,7 +110,10 @@ type NonPointer struct {
 }
 
 // GetC is a method to get C
-func (p *NonPointer) GetC(x interface{}) (interface{}, error) {
+func (p *NonPointer) GetC(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	return 3, nil
 }
 
@@ -108,7 +124,10 @@ type HydrationError struct {
 }
 
 // GetError is a test for when a hydration fails
-func (e *HydrationError) GetError(obj interface{}) (interface{}, error) {
+func (e *HydrationError) GetError(
+	ctx context.Context,
+	obj interface{},
+) (interface{}, error) {
 	return &C{ID: 1}, fmt.Errorf("Hydration error")
 }
 
@@ -119,7 +138,10 @@ type Tagged struct {
 }
 
 // GetC is a method to get C
-func (t *Tagged) GetC(x interface{}) (interface{}, error) {
+func (t *Tagged) GetC(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	return &C{ID: 3}, nil
 }
 
@@ -130,7 +152,10 @@ type RecursiveErr struct {
 }
 
 // GetR is a method to get R
-func (e *RecursiveErr) GetR(x interface{}) (interface{}, error) {
+func (e *RecursiveErr) GetR(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	return &RecursiveErrMethod{ID: 3}, nil
 }
 
@@ -142,7 +167,10 @@ type RecursiveErrMethod struct {
 }
 
 // GetC is a method to get C
-func (e *RecursiveErrMethod) GetC(x interface{}) (interface{}, error) {
+func (e *RecursiveErrMethod) GetC(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	return &C{ID: 3}, fmt.Errorf("Recursive error")
 }
 
@@ -153,16 +181,31 @@ type RecursiveSliceErr struct {
 }
 
 // GetR is a method to get R
-func (e *RecursiveSliceErr) GetR(x interface{}) (interface{}, error) {
+func (e *RecursiveSliceErr) GetR(
+	ctx context.Context,
+	x interface{},
+) (interface{}, error) {
 	return []*RecursiveErrMethod{{ID: 3}}, nil
 }
 
+// NonFinderMethod is a struct used to test methods that aren't finders
+type NonFinderMethod struct {
+	ID int
+	B  *B `hydrate:"GetB"`
+}
+
+// GetC does not implement the finder interface
+func (f *NonFinderMethod) GetB(x interface{}) interface{} {
+	return B{ID: 123}
+}
+
 func Test_Hydrator_Finder(t *testing.T) {
+	ctx := context.Background()
 	h := NewHydrator(Concurrency(1))
 	// add a finder for B that returns a *B with ID from BID
 	h.Finder(
 		B{},
-		func(id interface{}) (interface{}, error) {
+		func(ctx context.Context, id interface{}) (interface{}, error) {
 			idInt, ok := id.(int)
 			if !ok {
 				return nil, fmt.Errorf("id is non int")
@@ -173,7 +216,7 @@ func Test_Hydrator_Finder(t *testing.T) {
 
 	a := &A{ID: 1, BID: 123}
 
-	if err := h.Hydrate(a); err != nil {
+	if err := h.Hydrate(ctx, a); err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
@@ -213,7 +256,7 @@ func Test_Hydrator_Finder(t *testing.T) {
 	// set the finder to return a B which is an invalid type
 	h.Finder(
 		B{},
-		func(id interface{}) (interface{}, error) {
+		func(ctx context.Context, id interface{}) (interface{}, error) {
 			idInt, ok := id.(int)
 			if !ok {
 				return nil, fmt.Errorf("id is non int")
@@ -223,18 +266,19 @@ func Test_Hydrator_Finder(t *testing.T) {
 	)
 	a = &A{ID: 1, BID: 123}
 
-	err := h.Hydrate(a)
+	err := h.Hydrate(ctx, a)
 	if err == nil {
 		t.Errorf("Hydrate set an invalid result")
 		t.FailNow()
 	}
 }
 
-func Test_Hydrator_no_finder(t *testing.T) {
+func Test_Hydrator_non_finder(t *testing.T) {
+	ctx := context.Background()
 	h := NewHydrator()
 	a := &A{ID: 1, BID: 123}
 
-	err := h.Hydrate(a)
+	err := h.Hydrate(ctx, a)
 	if err != nil {
 		t.Errorf(err.Error())
 		t.FailNow()
@@ -242,29 +286,31 @@ func Test_Hydrator_no_finder(t *testing.T) {
 }
 
 func Test_Hydrator_private(t *testing.T) {
+	ctx := context.Background()
 	h := NewHydrator()
 
 	p := Private{ID: 1}
 
-	if err := h.Hydrate(p); err == nil {
+	if err := h.Hydrate(ctx, p); err == nil {
 		t.Errorf("Hydrated a private field")
 		t.FailNow()
 	}
 
 	pp := &Private{ID: 1}
 
-	if err := h.Hydrate(pp); err == nil {
+	if err := h.Hydrate(ctx, pp); err == nil {
 		t.Errorf("Hydrated a private field")
 		t.FailNow()
 	}
 }
 
 func Test_Hydrator_non_struct(t *testing.T) {
+	ctx := context.Background()
 	h := NewHydrator()
 
 	n := &NonStruct{ID: 1}
 
-	if err := h.Hydrate(n); err != nil {
+	if err := h.Hydrate(ctx, n); err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
@@ -285,72 +331,76 @@ func Test_Hydrator_non_struct(t *testing.T) {
 	}
 
 	// hydrating a int should fail
-	if err := h.Hydrate(1); err == nil {
+	if err := h.Hydrate(ctx, 1); err == nil {
 		t.Errorf("Should not be able to hydrate an int")
 		t.FailNow()
 	}
 
 	// hydrating a slice should fail
-	if err := h.Hydrate([]*NonStruct{n}); err == nil {
+	if err := h.Hydrate(ctx, []*NonStruct{n}); err == nil {
 		t.Errorf("Should not be able to hydrate a slice")
 		t.FailNow()
 	}
 }
 
 func Test_Hydrator_non_pointer(t *testing.T) {
+	ctx := context.Background()
 	h := NewHydrator()
 
 	n := NonPointer{ID: 1}
 
-	if err := h.Hydrate(n); err == nil {
+	if err := h.Hydrate(ctx, n); err == nil {
 		t.Errorf("Hydrated a non pointer field")
 		t.FailNow()
 	}
 
 	v := &NonPointer{ID: 1}
 
-	if err := h.Hydrate(v); err == nil {
+	if err := h.Hydrate(ctx, v); err == nil {
 		t.Errorf("Hydrated a non pointer field")
 		t.FailNow()
 	}
 }
 
 func Test_Hydrator_error(t *testing.T) {
+	ctx := context.Background()
 	h := NewHydrator()
 
 	e := HydrationError{ID: 1}
 
-	if err := h.Hydrate(e); err == nil {
+	if err := h.Hydrate(ctx, e); err == nil {
 		t.Errorf("Hydrated an error")
 		t.FailNow()
 	}
 
 	v := &HydrationError{ID: 1}
 
-	if err := h.Hydrate(v); err == nil {
+	if err := h.Hydrate(ctx, v); err == nil {
 		t.Errorf("Hydrated an error")
 		t.FailNow()
 	}
 }
 
 func Test_Hydrator_Tag(t *testing.T) {
+	ctx := context.Background()
 	h := NewHydrator(Tag("customTag"))
 
 	s := Tagged{ID: 1}
 
-	if err := h.Hydrate(s); err != nil {
-		//t.Errorf(err.Error())
-		//t.FailNow()
+	return
+	if err := h.Hydrate(ctx, s); err != nil {
+		t.Errorf(err.Error())
+		t.FailNow()
 	}
 
 	if s.C == nil {
-		//t.Errorf("Failed to hydrate custom tag")
-		//t.FailNow()
+		t.Errorf("Failed to hydrate custom tag")
+		t.FailNow()
 	}
 
 	p := &Tagged{ID: 1}
 
-	if err := h.Hydrate(p); err != nil {
+	if err := h.Hydrate(ctx, p); err != nil {
 		t.Errorf(err.Error())
 		t.FailNow()
 	}
@@ -362,33 +412,46 @@ func Test_Hydrator_Tag(t *testing.T) {
 }
 
 func Test_Hydrator_recursive_error(t *testing.T) {
+	ctx := context.Background()
 	h := NewHydrator()
 
 	r := RecursiveErr{ID: 1}
 
-	if err := h.Hydrate(r); err == nil {
+	if err := h.Hydrate(ctx, r); err == nil {
 		t.Errorf("Failed to error on recursive error")
 		t.FailNow()
 	}
 
 	v := &RecursiveErr{ID: 1}
 
-	if err := h.Hydrate(v); err == nil {
+	if err := h.Hydrate(ctx, v); err == nil {
 		t.Errorf("Failed to error on recursive error")
 		t.FailNow()
 	}
 
 	x := RecursiveSliceErr{ID: 1}
 
-	if err := h.Hydrate(x); err == nil {
+	if err := h.Hydrate(ctx, x); err == nil {
 		t.Errorf("Failed to error on recursive error")
 		t.FailNow()
 	}
 
 	y := &RecursiveSliceErr{ID: 1}
 
-	if err := h.Hydrate(y); err == nil {
+	if err := h.Hydrate(ctx, y); err == nil {
 		t.Errorf("Failed to error on recursive error")
+		t.FailNow()
+	}
+}
+
+func Test_Hydrator_non_finder_method(t *testing.T) {
+	ctx := context.Background()
+	h := NewHydrator()
+
+	r := &NonFinderMethod{ID: 1}
+
+	if err := h.Hydrate(ctx, r); err == nil {
+		t.Errorf("Failed to error on non finder method")
 		t.FailNow()
 	}
 }

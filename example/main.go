@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/hodgesds/hydrator"
@@ -43,11 +44,13 @@ type D struct {
 }
 
 func main() {
+	ctx := context.Background()
 	hydrator := hydrator.NewHydrator(hydrator.Concurrency(2))
 
 	hydrator.Finder(
 		B{},
-		func(obj interface{}) (interface{}, error) {
+		func(ctx context.Context, obj interface{}) (interface{}, error) {
+			fmt.Printf("%T %+v\n", obj, obj)
 			return &B{ID: 2}, nil
 		},
 	)
@@ -57,7 +60,7 @@ func main() {
 		BID: 2,
 	}
 
-	hydrator.Hydrate(a)
+	hydrator.Hydrate(ctx, a)
 
 	fmt.Printf("a: %+v\n", a)
 	fmt.Printf("a.B %+v\n", a.B)
