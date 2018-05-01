@@ -60,7 +60,7 @@ a := &A{
 	BID: 2,
 }
 
-hydrator.Hydrate(a)
+hydrator.Hydrate(context.Background(), a)
 
 fmt.Printf("a: %+v\n", a)
 fmt.Printf("a.B %+v\n", a.B)
